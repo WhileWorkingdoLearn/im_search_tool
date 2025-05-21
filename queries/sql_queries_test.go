@@ -8,7 +8,7 @@ import (
 )
 
 func TestSQL_Queries(t *testing.T) {
-	query, args := BuildQuery(GenerateNgrams("HelloworldinTown", 4))
+	query, args := BuildQuery(GenerateNGrams("HelloworldinTown", 4))
 	fmt.Println(query)
 	fmt.Println(args...)
 	assert.NotEqual(t, "", query)

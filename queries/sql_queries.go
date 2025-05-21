@@ -10,21 +10,37 @@ import (
 	"github.com/mattn/go-sqlite3"
 )
 
-const CreateDB = `CREATE TABLE IF NOT EXISTs address (
+const dropTable = `DROP TABLE address`
+
+const createDB = `CREATE TABLE IF NOT EXISTs address (
 	id INTEGER PRIMARY KEY,
 	name TEXT NOT NULL,
+	prefix TEXT NOT NULL,
+	suffix TEXT NOT NULL,
+	begin INTEGER NOT NULL,
 	token TEXT NOT  NULL,
 	country TEXT NO NULL
 );`
 
-const insertDB = `INSERT INTO address (name, token, country) VALUES (?, ngram(?, 4), ?)`
+const insertDB = `INSERT INTO address (name, prefix,suffix,begin, token, country) VALUES (?,?,?,?,?,?)`
+
+const selectAllFromDB = `SELECT name,prefix,suffix,begin, token, country FROM address;`
+const selectbyPrefix = `SELECT name, prefix,suffix,begin, token, country FROM address WHERE begin = ? AND (prefix = ? OR suffix = ?);`
 
 type Query struct {
 	db *sql.DB
 }
 
+const (
+	Prefix = 4
+	Suffix = 3
+)
+
 type AdressTable struct {
 	Name    string
+	Prefix  string
+	Suffix  string
+	Beginn  string
 	Token   string
 	Country string
 }
@@ -34,17 +50,71 @@ func NewQueryHandler(db *sql.DB) *Query {
 }
 
 func (q *Query) CreateTable() (sql.Result, error) {
-	return q.db.Exec(CreateDB)
+	return q.db.Exec(createDB)
 }
 
-func (q *Query) Instert(data []AdressTable) error {
+func (q *Query) DropTable() {
+	q.db.Exec(dropTable)
+}
+
+func (q *Query) Instert(data []AdressTable, ngramCount int) error {
 	for _, data := range data {
-		_, err := q.db.Exec(insertDB, data.Name, data.Token, data.Country)
+		prefix := InputTranspiler.transpileString(InputNormalizer.normalizeString(data.Name[:Prefix]))
+		suffix := InputTranspiler.transpileString(InputNormalizer.normalizeString(data.Name[len(data.Name)-Suffix:]))
+		_, err := q.db.Exec(insertDB, data.Name, prefix, suffix, prefix[0], GenerateNGrams(InputNormalizer.normalizeString(data.Name[Prefix:]), ngramCount), data.Country)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (q *Query) SelectAll() ([]AdressTable, error) {
+	table := make([]AdressTable, 0)
+	rows, err := q.db.Query(selectAllFromDB)
+	if err != nil {
+		log.Fatalf("Fehler beim Ausführen der Query: %v", err)
+	}
+	defer rows.Close()
+
+	// Ergebnisse ausgeben
+	for rows.Next() {
+		var address = AdressTable{}
+		if err := rows.Scan(&address.Name, &address.Prefix, &address.Suffix, &address.Beginn, &address.Token, &address.Country); err != nil {
+			return table, err
+		}
+		table = append(table, address)
+	}
+	if err := rows.Err(); err != nil {
+		return table, err
+	}
+	return table, nil
+
+}
+
+func (q *Query) Search(query string) ([]AdressTable, error) {
+	prefix := InputTranspiler.transpileString(InputNormalizer.normalizeString(query[:Prefix]))
+	suffix := InputTranspiler.transpileString(InputNormalizer.normalizeString(query[len(query)-Suffix:]))
+	table := make([]AdressTable, 0)
+	rows, err := q.db.Query(selectbyPrefix, prefix[0], prefix, suffix)
+	if err != nil {
+		log.Fatalf("Fehler beim Ausführen der Query: %v", err)
+	}
+	defer rows.Close()
+
+	// Ergebnisse ausgeben
+	for rows.Next() {
+		var address = AdressTable{}
+		if err := rows.Scan(&address.Name, &address.Prefix, &address.Suffix, &address.Beginn, &address.Token, &address.Country); err != nil {
+			return table, err
+		}
+		table = append(table, address)
+	}
+	if err := rows.Err(); err != nil {
+		return table, err
+	}
+	return table, nil
+
 }
 
 func (q *Query) RegisterNgram() error {
@@ -62,7 +132,7 @@ func (q *Query) RegisterNgram() error {
 		}
 
 		return sqliteConn.RegisterFunc("ngram", func(text string, n int64) string {
-			return GenerateNgrams(text, int(n))
+			return GenerateNGrams(text, int(n))
 		}, true)
 	})
 	if err != nil {

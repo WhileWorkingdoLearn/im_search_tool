@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"github/WhileCodingDoLearn/searchtool/queries"
 	"log"
@@ -10,7 +11,9 @@ import (
 )
 
 func main() {
-	fmt.Println("Hell world")
+	searchTerm := flag.String("s", "", "Input value for search")
+	flag.Parse()
+
 	db, err := sql.Open("sqlite3", "database/geodb.db")
 	if err != nil {
 		log.Fatal(err)
@@ -18,35 +21,61 @@ func main() {
 	db.SetMaxOpenConns(1)
 	defer db.Close()
 
-	fmt.Println("Connected to the Database")
 	var sqlVersion string
 	err = db.QueryRow("select sqlite_version()").Scan(&sqlVersion)
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Connected to the Database: SQLite3 -v: ", sqlVersion)
 
-	fmt.Println(sqlVersion)
 	queryHandler := queries.NewQueryHandler(db)
+	queryHandler.DropTable()
+
 	_, err = queryHandler.CreateTable()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	errRegister := queryHandler.RegisterNgram()
-	if errRegister != nil {
-		log.Fatal(errRegister)
-	}
+	/*
+		errRegister := queryHandler.RegisterNgram()
+		if errRegister != nil {
+			log.Fatal(errRegister)
+		}
+	*/
 
 	testData := []queries.AdressTable{
-		{Name: "Berlin Hauptbahnhof", Token: "", Country: "DE"},
-		{Name: "München Marienplatz", Token: "", Country: "DE"},
-		{Name: "Paris Gare du Nord", Token: "", Country: "FR"},
-		{Name: "London King's Cross", Token: "", Country: "GB"},
-		{Name: "New York Penn Station", Token: "", Country: "US"},
+		{Name: "Berlin", Token: "", Country: "DE"},
+		{Name: "Bertin", Token: "", Country: "DE"},
+		{Name: "Berllin", Token: "", Country: "DE"},
+		{Name: "Hauptbahnhof", Token: "", Country: "DE"},
+		{Name: "München", Token: "", Country: "DE"},
+		{Name: "Marienplatz", Token: "", Country: "DE"},
+		{Name: "Gare du Nord", Token: "", Country: "FR"},
+		{Name: "Paris", Token: "", Country: "FR"},
+		{Name: "London", Token: "", Country: "GB"},
+		{Name: "King's Cross", Token: "", Country: "GB"},
+		{Name: "Penn Station", Token: "", Country: "US"},
+		{Name: "New York", Token: "", Country: "US"},
 	}
-	queryHandler.Instert(testData)
+	errInsert := queryHandler.Instert(testData, 3)
+	if errInsert != nil {
+		log.Fatal(errInsert)
+	}
 
-	fmt.Println("Testdaten wurden erfolgreich in die Datenbank eingefügt.")
+	if *searchTerm != "" {
+		data, err := queryHandler.Search(*searchTerm)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(data)
+	} else {
+		data, err := queryHandler.SelectAll()
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(data)
+	}
+
 }
 
 /*
