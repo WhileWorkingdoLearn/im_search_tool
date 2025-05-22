@@ -1,13 +1,8 @@
 package queries
 
 import (
-	"context"
 	"database/sql"
-	"fmt"
 	"log"
-	"strings"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 const dropTable = `DROP TABLE address`
@@ -24,26 +19,14 @@ const createDB = `CREATE TABLE IF NOT EXISTs address (
 
 const insertDB = `INSERT INTO address (name, prefix,suffix,begin, token, country) VALUES (?,?,?,?,?,?)`
 
-const selectAllFromDB = `SELECT name,prefix,suffix,begin, token, country FROM address;`
+const selectAllFromDB = `SELECT name,prefix,suffix,begin, token, country FROM address;
+`
 const selectbyPrefix = `SELECT name, prefix,suffix,begin, token, country FROM address WHERE begin = ? AND (prefix = ? OR suffix = ?);`
 
-type Query struct {
-	db *sql.DB
-}
-
 const (
-	Prefix = 4
+	Prefix = 3
 	Suffix = 3
 )
-
-type AdressTable struct {
-	Name    string
-	Prefix  string
-	Suffix  string
-	Beginn  string
-	Token   string
-	Country string
-}
 
 func NewQueryHandler(db *sql.DB) *Query {
 	return &Query{db: db}
@@ -57,15 +40,47 @@ func (q *Query) DropTable() {
 	q.db.Exec(dropTable)
 }
 
-func (q *Query) Instert(data []AdressTable, ngramCount int) error {
-	for _, data := range data {
-		prefix := InputTranspiler.transpileString(InputNormalizer.normalizeString(data.Name[:Prefix]))
-		suffix := InputTranspiler.transpileString(InputNormalizer.normalizeString(data.Name[len(data.Name)-Suffix:]))
-		_, err := q.db.Exec(insertDB, data.Name, prefix, suffix, prefix[0], GenerateNGrams(InputNormalizer.normalizeString(data.Name[Prefix:]), ngramCount), data.Country)
+func (q *Query) InstertMany(input []AdressTable) error {
+	for _, data := range input {
+		token := ProcessString(data.Name)
+		if len(token) >= Prefix {
+			prefix := token[:Prefix]
+			suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
+			_, err := q.db.Exec(
+				insertDB,     // Query
+				data.Name,    // StreetName Human Readable
+				prefix,       // normalized Token Chunk Prefix
+				suffix,       // normalized Token Chunk Suffix
+				prefix[0],    // first letter of prefix
+				token,        // normalized TOken of Streetname
+				data.Country) // countrycode
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+	return nil
+}
+
+func (q *Query) Instert(data AdressTable) error {
+	token := ProcessString(data.Name)
+	if len(token) >= Prefix {
+		prefix := token[:Prefix]
+		suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
+		_, err := q.db.Exec(
+			insertDB,     // Query
+			data.Name,    // StreetName Human Readable
+			prefix,       // normalized Token Chunk Prefix
+			suffix,       // normalized Token Chunk Suffix
+			prefix[0],    // first letter of prefix
+			token,        // normalized TOken of Streetname
+			data.Country) // countrycode
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -92,111 +107,32 @@ func (q *Query) SelectAll() ([]AdressTable, error) {
 
 }
 
-func (q *Query) Search(query string) ([]AdressTable, error) {
-	prefix := InputTranspiler.transpileString(InputNormalizer.normalizeString(query[:Prefix]))
-	suffix := InputTranspiler.transpileString(InputNormalizer.normalizeString(query[len(query)-Suffix:]))
-	table := make([]AdressTable, 0)
-	rows, err := q.db.Query(selectbyPrefix, prefix[0], prefix, suffix)
-	if err != nil {
-		log.Fatalf("Fehler beim Ausführen der Query: %v", err)
-	}
-	defer rows.Close()
+func (q *Query) Search(query string) ([]QueryResult, error) {
+	table := make([]QueryResult, 0)
+	token := ProcessString(query)
+	if len(token) >= Prefix {
+		prefix := token[:Prefix]
+		suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
 
-	// Ergebnisse ausgeben
-	for rows.Next() {
-		var address = AdressTable{}
-		if err := rows.Scan(&address.Name, &address.Prefix, &address.Suffix, &address.Beginn, &address.Token, &address.Country); err != nil {
+		rows, err := q.db.Query(selectbyPrefix, prefix[0], prefix, suffix)
+		if err != nil {
+			log.Fatalf("Fehler beim Ausführen der Query: %v", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var address = QueryResult{}
+			placeholder := ""
+			if err := rows.Scan(&address.Name, placeholder, placeholder, placeholder, &address.Token, &address.Country); err != nil {
+				return table, err
+			}
+			table = append(table, address)
+		}
+		if err := rows.Err(); err != nil {
 			return table, err
 		}
-		table = append(table, address)
-	}
-	if err := rows.Err(); err != nil {
-		return table, err
+	} else {
+		return nil, nil
 	}
 	return table, nil
-
-}
-
-func (q *Query) RegisterNgram() error {
-	ctx := context.Background()
-	conn, err := q.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	err = conn.Raw(func(dc interface{}) error {
-		sqliteConn, ok := dc.(*sqlite3.SQLiteConn)
-		if !ok {
-			return fmt.Errorf("unerwarteter Typ: %T", dc)
-		}
-
-		return sqliteConn.RegisterFunc("ngram", func(text string, n int64) string {
-			return GenerateNGrams(text, int(n))
-		}, true)
-	})
-	if err != nil {
-		fmt.Println("Fehler beim Registrieren der Funktion:", err)
-		return err
-	}
-
-	return nil
-}
-
-func BuildQuery(searcktokens string) (string, []interface{}) {
-	searchTokens := strings.Split(searcktokens, ", ")
-	conditions := []string{}
-	args := []interface{}{}
-	for _, token := range searchTokens {
-		conditions = append(conditions, "token LIKE ?")
-		args = append(args, "%"+token+"%")
-	}
-	whereClause := strings.Join(conditions, " OR ")
-
-	scoreParts := []string{}
-	for range searchTokens {
-		scoreParts = append(scoreParts, "CASE WHEN token LIKE ? THEN 1 ELSE 0 END")
-	}
-
-	scoreParams := []interface{}{}
-	for _, token := range searchTokens {
-		scoreParams = append(scoreParams, "%"+token+"%")
-	}
-
-	query := fmt.Sprintf(`
-        SELECT id, name, token, country,
-            (%s) as score
-        FROM address
-        WHERE %s
-        ORDER BY score DESC
-    `, strings.Join(scoreParts, " + "), whereClause)
-
-	args = append(args, scoreParams...)
-
-	return query, args
-}
-
-func (q *Query) FindAdresses(input string, args []interface{}) error {
-
-	// Query ausführen
-	rows, err := q.db.Query(input, args...)
-	if err != nil {
-		log.Fatalf("Fehler beim Ausführen der Query: %v", err)
-	}
-	defer rows.Close()
-
-	// Ergebnisse ausgeben
-	for rows.Next() {
-		var id int
-		var name, token, country string
-		var score int
-		if err := rows.Scan(&id, &name, &token, &country, &score); err != nil {
-			return err
-		}
-		fmt.Printf("ID: %d, Name: %s, Score: %d, Country: %s\n", id, name, score, country)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	return nil
 }

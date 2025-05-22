@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"github/WhileCodingDoLearn/searchtool/queries"
+	"github/WhileCodingDoLearn/searchtool/utils"
 	"log"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -29,45 +31,29 @@ func main() {
 	fmt.Println("Connected to the Database: SQLite3 -v: ", sqlVersion)
 
 	queryHandler := queries.NewQueryHandler(db)
-	queryHandler.DropTable()
+
+	//utils.LoadTable("data/DE-addresses.tsv", utils.Handler(queryHandler))
 
 	_, err = queryHandler.CreateTable()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	/*
-		errRegister := queryHandler.RegisterNgram()
-		if errRegister != nil {
-			log.Fatal(errRegister)
-		}
-	*/
-
-	testData := []queries.AdressTable{
-		{Name: "Berlin", Token: "", Country: "DE"},
-		{Name: "Bertin", Token: "", Country: "DE"},
-		{Name: "Berllin", Token: "", Country: "DE"},
-		{Name: "Hauptbahnhof", Token: "", Country: "DE"},
-		{Name: "München", Token: "", Country: "DE"},
-		{Name: "Marienplatz", Token: "", Country: "DE"},
-		{Name: "Gare du Nord", Token: "", Country: "FR"},
-		{Name: "Paris", Token: "", Country: "FR"},
-		{Name: "London", Token: "", Country: "GB"},
-		{Name: "King's Cross", Token: "", Country: "GB"},
-		{Name: "Penn Station", Token: "", Country: "US"},
-		{Name: "New York", Token: "", Country: "US"},
-	}
-	errInsert := queryHandler.Instert(testData, 3)
-	if errInsert != nil {
-		log.Fatal(errInsert)
-	}
-
-	if len(*searchTerm) < 3 {
+	if len(*searchTerm) >= 3 {
+		defer utils.TimeTrack(time.Now(), "db access")
+		start := time.Now()
 		data, err := queryHandler.Search(*searchTerm)
 		if err != nil {
 			fmt.Println(err)
 		}
-		fmt.Println(data)
+
+		sorted := queries.SortByScore(data, *searchTerm)
+		for _, s := range sorted {
+			fmt.Println(s.Name)
+		}
+		timeSince := time.Since(start)
+		fmt.Println(timeSince)
+
 	} else {
 		data, err := queryHandler.SelectAll()
 		if err != nil {
