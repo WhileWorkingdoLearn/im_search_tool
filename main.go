@@ -31,8 +31,8 @@ func main() {
 	fmt.Println("Connected to the Database: SQLite3 -v: ", sqlVersion)
 
 	queryHandler := queries.NewQueryHandler(db)
-
-	//utils.LoadTable("data/DE-addresses.tsv", utils.Handler(queryHandler))
+	//queryHandler.DropTable()
+	//utils.LoadTable("data/example.tsv", utils.Handler(queryHandler))
 
 	_, err = queryHandler.CreateTable()
 	if err != nil {
@@ -46,8 +46,9 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
-
-		sorted := queries.SortByScore(data, *searchTerm)
+		temr := queries.ProcessString(*searchTerm)
+		fmt.Println(temr)
+		sorted := queries.SortByScore(data[:], temr)
 		for _, s := range sorted {
 			fmt.Println(s.Name)
 		}

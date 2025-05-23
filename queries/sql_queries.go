@@ -19,9 +19,9 @@ const createDB = `CREATE TABLE IF NOT EXISTs address (
 
 const insertDB = `INSERT INTO address (name, prefix,suffix,begin, token, country) VALUES (?,?,?,?,?,?)`
 
-const selectAllFromDB = `SELECT name,prefix,suffix,begin, token, country FROM address;
+const selectAllFromDB = `SELECT name,token, country FROM address;
 `
-const selectbyPrefix = `SELECT name, prefix,suffix,begin, token, country FROM address WHERE begin = ? AND (prefix = ? OR suffix = ?);`
+const selectbyPrefix = `SELECT name, token, country FROM address WHERE begin = ? AND (prefix = ? OR suffix = ?);`
 
 const (
 	Prefix = 3
@@ -95,7 +95,7 @@ func (q *Query) SelectAll() ([]AdressTable, error) {
 	// Ergebnisse ausgeben
 	for rows.Next() {
 		var address = AdressTable{}
-		if err := rows.Scan(&address.Name, &address.Prefix, &address.Suffix, &address.Beginn, &address.Token, &address.Country); err != nil {
+		if err := rows.Scan(&address.Name, &address.Token, &address.Country); err != nil {
 			return table, err
 		}
 		table = append(table, address)
@@ -122,8 +122,8 @@ func (q *Query) Search(query string) ([]QueryResult, error) {
 
 		for rows.Next() {
 			var address = QueryResult{}
-			placeholder := ""
-			if err := rows.Scan(&address.Name, placeholder, placeholder, placeholder, &address.Token, &address.Country); err != nil {
+
+			if err := rows.Scan(&address.Name, &address.Token, &address.Country); err != nil {
 				return table, err
 			}
 			table = append(table, address)
