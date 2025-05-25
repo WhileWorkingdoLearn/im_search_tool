@@ -85,19 +85,15 @@ func ProcessString(input string) string {
 	return fmt.Sprintf("%v%v", string(begin), tokenized[1:])
 }
 
-func GenerateNGrams(input string, n int) string {
-	// Remove spaces and normalize the string
-	input = strings.ReplaceAll(input, " ", "")
-	length := len(input)
-
-	if n > length || n <= 0 {
-		return input
+// generateNGrams generiert n-Gramme aus dem übergebenen String s
+// unter Verwendung von Padding. Beispiel: s = "alice", n = 3
+// ergibt: ["$$a", "$al", "ali", "lic", "ice", "ce$", "e$$"]
+func GenerateNGrams(s string, n int) []string {
+	pad := strings.Repeat("$", n-1)
+	padded := pad + s + pad
+	var ngrams []string
+	for i := 0; i <= len(padded)-n; i++ {
+		ngrams = append(ngrams, padded[i:i+n])
 	}
-
-	ngrams := []string{}
-	for i := 0; i <= length-n; i++ {
-		ngrams = append(ngrams, input[i:i+n])
-	}
-
-	return strings.Join(ngrams, ",")
+	return ngrams
 }

@@ -4,10 +4,6 @@ import "database/sql"
 
 type AdressTable struct {
 	Name    string
-	Prefix  string
-	Suffix  string
-	Beginn  string
-	Token   string
 	Country string
 }
 
@@ -17,7 +13,8 @@ type Sort struct {
 }
 
 type Query struct {
-	db *sql.DB
+	db        *sql.DB
+	ngramSize int
 }
 
 type QueryResult struct {

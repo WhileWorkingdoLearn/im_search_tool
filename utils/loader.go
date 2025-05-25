@@ -2,18 +2,10 @@ package utils
 
 import (
 	"bufio"
-	"github/WhileCodingDoLearn/searchtool/queries"
 	"log"
 	"os"
 	"strings"
 )
-
-func Handler(queryHandler *queries.Query) func(data string) error {
-	return func(data string) error {
-		err := queryHandler.Instert(queries.AdressTable{Name: data, Country: "DE"})
-		return err
-	}
-}
 
 /*"data/DE-addresses.tsv"*/
 func LoadTable(path string, queryHandler func(data string) error) {

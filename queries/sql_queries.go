@@ -2,91 +2,25 @@ package queries
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"strings"
 )
-
-const dropTable = `DROP TABLE address`
-
-const createDB = `CREATE TABLE IF NOT EXISTs address (
-	id INTEGER PRIMARY KEY,
-	name TEXT NOT NULL,
-	prefix TEXT NOT NULL,
-	suffix TEXT NOT NULL,
-	begin INTEGER NOT NULL,
-	token TEXT NOT  NULL,
-	country TEXT NO NULL
-);`
-
-const insertDB = `INSERT INTO address (name, prefix,suffix,begin, token, country) VALUES (?,?,?,?,?,?)`
-
-const selectAllFromDB = `SELECT name,token, country FROM address;
-`
-const selectbyPrefix = `SELECT name, token, country FROM address WHERE begin = ? AND (prefix = ? OR suffix = ?);`
 
 const (
 	Prefix = 3
 	Suffix = 3
 )
 
-func NewQueryHandler(db *sql.DB) *Query {
-	return &Query{db: db}
-}
+const SelectNgram = `SELECT id FROM ngrams_dict WHERE ngram = ?`
 
-func (q *Query) CreateTable() (sql.Result, error) {
-	return q.db.Exec(createDB)
-}
-
-func (q *Query) DropTable() {
-	q.db.Exec(dropTable)
-}
-
-func (q *Query) InstertMany(input []AdressTable) error {
-	for _, data := range input {
-		token := ProcessString(data.Name)
-		if len(token) >= Prefix {
-			prefix := token[:Prefix]
-			suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
-			_, err := q.db.Exec(
-				insertDB,     // Query
-				data.Name,    // StreetName Human Readable
-				prefix,       // normalized Token Chunk Prefix
-				suffix,       // normalized Token Chunk Suffix
-				prefix[0],    // first letter of prefix
-				token,        // normalized TOken of Streetname
-				data.Country) // countrycode
-			if err != nil {
-				return err
-			}
-		}
-
-	}
-	return nil
-}
-
-func (q *Query) Instert(data AdressTable) error {
-	token := ProcessString(data.Name)
-	if len(token) >= Prefix {
-		prefix := token[:Prefix]
-		suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
-		_, err := q.db.Exec(
-			insertDB,     // Query
-			data.Name,    // StreetName Human Readable
-			prefix,       // normalized Token Chunk Prefix
-			suffix,       // normalized Token Chunk Suffix
-			prefix[0],    // first letter of prefix
-			token,        // normalized TOken of Streetname
-			data.Country) // countrycode
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+func NewQueryHandler(db *sql.DB, ngramSize int) *Query {
+	return &Query{db: db, ngramSize: ngramSize}
 }
 
 func (q *Query) SelectAll() ([]AdressTable, error) {
 	table := make([]AdressTable, 0)
-	rows, err := q.db.Query(selectAllFromDB)
+	rows, err := q.db.Query("select * from address")
 	if err != nil {
 		log.Fatalf("Fehler beim Ausführen der Query: %v", err)
 	}
@@ -95,7 +29,8 @@ func (q *Query) SelectAll() ([]AdressTable, error) {
 	// Ergebnisse ausgeben
 	for rows.Next() {
 		var address = AdressTable{}
-		if err := rows.Scan(&address.Name, &address.Token, &address.Country); err != nil {
+		id := 0
+		if err := rows.Scan(&id, &address.Name, &address.Country); err != nil {
 			return table, err
 		}
 		table = append(table, address)
@@ -107,32 +42,43 @@ func (q *Query) SelectAll() ([]AdressTable, error) {
 
 }
 
-func (q *Query) Search(query string) ([]QueryResult, error) {
-	table := make([]QueryResult, 0)
-	token := ProcessString(query)
-	if len(token) >= Prefix {
-		prefix := token[:Prefix]
-		suffix := token[:Prefix][len(token[:Prefix])-Suffix:]
-
-		rows, err := q.db.Query(selectbyPrefix, prefix[0], prefix, suffix)
-		if err != nil {
-			log.Fatalf("Fehler beim Ausführen der Query: %v", err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var address = QueryResult{}
-
-			if err := rows.Scan(&address.Name, &address.Token, &address.Country); err != nil {
-				return table, err
-			}
-			table = append(table, address)
-		}
-		if err := rows.Err(); err != nil {
-			return table, err
-		}
-	} else {
-		return nil, nil
+func anySlice(strs []string) []any {
+	out := make([]any, len(strs))
+	for i, v := range strs {
+		out[i] = v
 	}
-	return table, nil
+	return out
+}
+
+func (q *Query) Search(input string) ([]QueryResult, error) {
+	token := ProcessString(input)
+	ngram := GenerateNGrams(token, 5)
+	placeholders := strings.Repeat("?,", len(ngram))
+	placeholders = placeholders[:len(placeholders)-1] // remove trailing comma
+
+	query := fmt.Sprintf(`
+	SELECT a.name, a.country, COUNT(*) AS score
+	FROM ngrams_dict nd
+	JOIN string_ngrams sg ON nd.id = sg.ngram_id
+	JOIN address a ON a.id = sg.string_id
+	WHERE nd.ngram IN (%s)
+	GROUP BY a.id, a.name, a.country
+	ORDER BY score DESC
+	LIMIT 10;
+`, placeholders)
+
+	rows, err := q.db.Query(query, anySlice(ngram)...)
+	if err != nil {
+		return nil, err
+	}
+
+	Adresses := make([]QueryResult, 0)
+	for rows.Next() {
+		found := QueryResult{}
+		rows.Scan(&found.Name, &found.Country, &found.Score)
+		Adresses = append(Adresses, found)
+	}
+
+	return Adresses, nil
+
 }

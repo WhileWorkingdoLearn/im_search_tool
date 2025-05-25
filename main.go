@@ -30,28 +30,28 @@ func main() {
 	}
 	fmt.Println("Connected to the Database: SQLite3 -v: ", sqlVersion)
 
-	queryHandler := queries.NewQueryHandler(db)
-	//queryHandler.DropTable()
-	//utils.LoadTable("data/example.tsv", utils.Handler(queryHandler))
+	queryHandler := queries.NewQueryHandler(db, 5)
+	/*
+		utils.LoadTable("data/DE-addresses.tsv", func(data string) error {
+			err := queryHandler.InsertAddressWithNgrams(5, data, "DE")
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+	*/
 
-	_, err = queryHandler.CreateTable()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if len(*searchTerm) >= 3 {
+	if len(*searchTerm) >= 2 {
 		defer utils.TimeTrack(time.Now(), "db access")
 		start := time.Now()
-		data, err := queryHandler.Search(*searchTerm)
+
+		result, err := queryHandler.Search(*searchTerm)
 		if err != nil {
-			fmt.Println(err)
+			log.Fatal(err)
 		}
-		temr := queries.ProcessString(*searchTerm)
-		fmt.Println(temr)
-		sorted := queries.SortByScore(data[:], temr)
-		for _, s := range sorted {
-			fmt.Println(s.Name)
-		}
+		sorted := queries.SortByScore(result, *searchTerm)
+
+		fmt.Println(sorted)
 		timeSince := time.Since(start)
 		fmt.Println(timeSince)
 
